@@ -1,56 +1,65 @@
 const express = require('express');
-const router = express.Router();
+const router  = express.Router();
+const jwt     = require('jsonwebtoken');
 const Booking = require('../models/Booking');
-const jwt = require('jsonwebtoken');
+const Listing = require('../models/Listing');
 
-function auth(req, res, next) {
-  const header = req.headers['authorization'];
-  if (!header) return res.status(401).json({ error: 'Not logged in' });
+function getUser(req) {
   try {
-    const token = header.split(' ')[1];
-    req.user = jwt.verify(token, process.env.JWT_SECRET);
-    next();
-  } catch(e) { res.status(401).json({ error: 'Invalid token' }); }
+    const token = (req.headers.authorization || '').replace('Bearer ', '');
+    return jwt.verify(token, process.env.JWT_SECRET);
+  } catch { return null; }
 }
 
-// GET my bookings (as student)
-router.get('/my', auth, async (req, res) => {
+// GET my bookings (must be before /:id)
+router.get('/user/me', async (req, res) => {
   try {
-    const bookings = await Booking.find({ student: req.user.userId })
-      .populate('listing', 'title city price')
+    const user = getUser(req);
+    if (!user) return res.status(401).json({ error: 'Login required.' });
+    const bookings = await Booking.find({ student: user.userId })
+      .populate('listing', 'title city price roomType')
       .sort({ createdAt: -1 });
     res.json(bookings);
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch { res.status(500).json({ error: 'Server error.' }); }
 });
 
-// GET bookings for landlord's listings
-router.get('/landlord', auth, async (req, res) => {
+// GET bookings by studentId (legacy)
+router.get('/:studentId', async (req, res) => {
   try {
-    const Listing = require('../models/Listing');
-    const myListings = await Listing.find({ owner: req.user.userId }).select('_id');
-    const ids = myListings.map(l => l._id);
-    const bookings = await Booking.find({ listing: { $in: ids } })
-      .populate('listing', 'title city')
-      .sort({ createdAt: -1 });
+    const bookings = await Booking.find({ student: req.params.studentId })
+      .populate('listing', 'title city price');
     res.json(bookings);
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch { res.status(500).json({ error: 'Server error.' }); }
 });
 
-// POST create a booking
-router.post('/', auth, async (req, res) => {
+// POST create booking → auto marks listing as unavailable
+router.post('/', async (req, res) => {
   try {
-    const booking = new Booking({ ...req.body, student: req.user.userId });
+    const user = getUser(req);
+    if (!user) return res.status(401).json({ error: 'Login required.' });
+
+    const listing = await Listing.findById(req.body.listing);
+    if (!listing)           return res.status(404).json({ error: 'Listing not found.' });
+    if (!listing.available) return res.status(400).json({ error: 'This listing is no longer available.' });
+
+    const booking = new Booking({
+      listing:    req.body.listing,
+      student:    user.userId,
+      moveInDate: req.body.moveInDate,
+      roomType:   req.body.roomType,
+      message:    req.body.message || '',
+      status:     'pending'
+    });
     await booking.save();
-    res.json({ message: 'Booking created!', booking });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
 
-// PUT update booking status
-router.put('/:id', auth, async (req, res) => {
-  try {
-    const booking = await Booking.findByIdAndUpdate(req.params.id, { status: req.body.status }, { new: true });
-    res.json({ message: 'Booking updated!', booking });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+    // ✅ Mark listing as unavailable
+    await Listing.findByIdAndUpdate(req.body.listing, { available: false });
+
+    const populated = await booking.populate('listing', 'title city price roomType');
+    res.json({ message: 'Booking created! Listing marked as unavailable.', booking: populated });
+  } catch(err) {
+    res.status(500).json({ error: 'Server error: ' + err.message });
+  }
 });
 
 module.exports = router;
