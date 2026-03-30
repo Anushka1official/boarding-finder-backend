@@ -10,6 +10,8 @@ const listingSchema = new mongoose.Schema({
   title:       { type: String, required: true },
   city:        { type: String, required: true },
   price:       { type: Number, required: true },
+  deposit:     { type: Number, default: 0 },
+  advance:     { type: Number, default: 0 },
   roomType:    { type: String, default: 'Any' },
   amenities:   [String],
   description: { type: String, default: '' },
