@@ -139,4 +139,33 @@ router.delete('/:id/media/:mediaIndex', async (req, res) => {
   }
 });
 
+// ── DELETE listing ────────────────────────────────
+router.delete('/:id', async (req, res) => {
+  try {
+    const user = getUser(req);
+    if (!user) return res.status(401).json({ error: 'Login required.' });
+
+    const listing = await Listing.findById(req.params.id);
+    if (!listing) return res.status(404).json({ error: 'Listing not found.' });
+
+    // Only the owner can delete their listing
+    if (listing.owner && listing.owner.toString() !== user.userId) {
+      return res.status(403).json({ error: 'You can only delete your own listings.' });
+    }
+
+    // Delete all associated media files from disk
+    if (listing.media && listing.media.length) {
+      listing.media.forEach(m => {
+        const filePath = path.join(__dirname, '..', 'uploads', path.basename(m.url));
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      });
+    }
+
+    await Listing.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Listing deleted successfully.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Delete error: ' + err.message });
+  }
+});
+
 module.exports = router;
