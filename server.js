@@ -25,3 +25,4 @@ app.use('/api/bookings', require('./routes/bookings'));
 app.listen(process.env.PORT, () => {
   console.log(`Server running on port ${process.env.PORT}`);
 });
+
