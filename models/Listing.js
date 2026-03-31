@@ -14,6 +14,7 @@ const listingSchema = new mongoose.Schema({
   advance:     { type: Number, default: 0 },
   roomType:    { type: String, default: 'Any' },
   amenities:   [String],
+  rules:       [String],
   description: { type: String, default: '' },
   media:       [mediaSchema],
   owner:       { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
