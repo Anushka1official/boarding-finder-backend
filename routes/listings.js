@@ -1,10 +1,10 @@
-const express  = require('express');
-const router   = express.Router();
-const jwt      = require('jsonwebtoken');
-const multer   = require('multer');
-const path     = require('path');
-const fs       = require('fs');
-const Listing  = require('../models/Listing');
+const express    = require('express');
+const router     = express.Router();
+const jwt        = require('jsonwebtoken');
+const multer     = require('multer');
+const cloudinary = require('cloudinary').v2;
+const { Readable } = require('stream');
+const Listing    = require('../models/Listing');
 
 // ── Auth helper ──────────────────────────────────
 function getUser(req) {
@@ -14,32 +14,42 @@ function getUser(req) {
   } catch { return null; }
 }
 
-// ── Multer setup — save to uploads/ folder ────────
-const uploadsDir = path.join(__dirname, '..', 'uploads');
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+// ── Cloudinary config (reads from Railway .env) ──
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key:    process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadsDir),
-  filename: (req, file, cb) => {
-    const ext  = path.extname(file.originalname).toLowerCase();
-    const name = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
-    cb(null, name);
+// ── Multer: store in memory (NOT on disk) ────────
+// Files go: Browser → RAM → Cloudinary → URL saved in MongoDB
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = /jpeg|jpg|png|gif|webp|mp4|mov|avi|mkv|webm/;
+    const ext  = allowed.test(file.originalname.split('.').pop().toLowerCase());
+    const mime = allowed.test(file.mimetype.split('/')[1]);
+    if (ext || mime) cb(null, true);
+    else cb(new Error('Only image and video files are allowed'));
   }
 });
 
-const fileFilter = (req, file, cb) => {
-  const allowed = /jpeg|jpg|png|gif|webp|mp4|mov|avi|mkv|webm/;
-  const ext     = allowed.test(path.extname(file.originalname).toLowerCase());
-  const mime    = allowed.test(file.mimetype.split('/')[1]);
-  if (ext || mime) cb(null, true);
-  else cb(new Error('Only image and video files are allowed'));
-};
-
-const upload = multer({
-  storage,
-  fileFilter,
-  limits: { fileSize: 20 * 1024 * 1024 } // 20MB per file
-});
+// ── Helper: upload one file buffer to Cloudinary ─
+function uploadToCloudinary(buffer, mimetype, folder) {
+  return new Promise((resolve, reject) => {
+    const isVideo      = mimetype.startsWith('video/');
+    const resourceType = isVideo ? 'video' : 'image';
+    const stream       = cloudinary.uploader.upload_stream(
+      { folder, resource_type: resourceType },
+      (error, result) => { if (error) reject(error); else resolve(result); }
+    );
+    const readable = new Readable();
+    readable.push(buffer);
+    readable.push(null);
+    readable.pipe(stream);
+  });
+}
 
 // ── GET all listings ──────────────────────────────
 router.get('/', async (req, res) => {
@@ -87,7 +97,7 @@ async function updateListing(req, res) {
 router.put('/:id',   updateListing);
 router.patch('/:id', updateListing);
 
-// ── POST upload media to a listing ───────────────
+// ── POST upload media ─────────────────────────────
 router.post('/:id/media', upload.array('media', 10), async (req, res) => {
   try {
     const user = getUser(req);
@@ -97,10 +107,16 @@ router.post('/:id/media', upload.array('media', 10), async (req, res) => {
     const listing = await Listing.findById(req.params.id);
     if (!listing) return res.status(404).json({ error: 'Listing not found.' });
 
-    const newMedia = req.files.map(file => ({
-      url:      '/uploads/' + file.filename,
-      type:     file.mimetype.startsWith('video/') ? 'video' : 'image',
-      filename: file.filename
+    // Upload all files to Cloudinary at the same time
+    const results = await Promise.all(
+      req.files.map(f => uploadToCloudinary(f.buffer, f.mimetype, `smart-boarding/${req.params.id}`))
+    );
+
+    const newMedia = results.map((result, i) => ({
+      url:      result.secure_url,   // Full Cloudinary HTTPS URL — stored in MongoDB
+      publicId: result.public_id,   // Needed to delete from Cloudinary later
+      type:     req.files[i].mimetype.startsWith('video/') ? 'video' : 'image',
+      filename: result.public_id
     }));
 
     listing.media = [...(listing.media || []), ...newMedia];
@@ -125,21 +141,24 @@ router.delete('/:id/media/:mediaIndex', async (req, res) => {
     if (isNaN(idx) || idx < 0 || idx >= listing.media.length)
       return res.status(400).json({ error: 'Invalid media index.' });
 
-    // Delete the file from disk
     const mediaItem = listing.media[idx];
-    const filePath  = path.join(__dirname, '..', 'uploads', path.basename(mediaItem.url));
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+
+    // Delete from Cloudinary
+    if (mediaItem.publicId) {
+      const resourceType = mediaItem.type === 'video' ? 'video' : 'image';
+      await cloudinary.uploader.destroy(mediaItem.publicId, { resource_type: resourceType })
+        .catch(err => console.error('Cloudinary delete error:', err.message));
+    }
 
     listing.media.splice(idx, 1);
     await listing.save();
-
     res.json({ message: 'Media deleted!', listing });
   } catch (err) {
     res.status(500).json({ error: 'Delete error: ' + err.message });
   }
 });
 
-// ── DELETE listing ────────────────────────────────
+// ── DELETE listing + all its Cloudinary media ─────
 router.delete('/:id', async (req, res) => {
   try {
     const user = getUser(req);
@@ -148,17 +167,18 @@ router.delete('/:id', async (req, res) => {
     const listing = await Listing.findById(req.params.id);
     if (!listing) return res.status(404).json({ error: 'Listing not found.' });
 
-    // Only the owner can delete their listing
-    if (listing.owner && listing.owner.toString() !== user.userId) {
+    if (listing.owner && listing.owner.toString() !== user.userId)
       return res.status(403).json({ error: 'You can only delete your own listings.' });
-    }
 
-    // Delete all associated media files from disk
+    // Delete all Cloudinary media files
     if (listing.media && listing.media.length) {
-      listing.media.forEach(m => {
-        const filePath = path.join(__dirname, '..', 'uploads', path.basename(m.url));
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-      });
+      await Promise.allSettled(
+        listing.media.filter(m => m.publicId).map(m =>
+          cloudinary.uploader.destroy(m.publicId, {
+            resource_type: m.type === 'video' ? 'video' : 'image'
+          })
+        )
+      );
     }
 
     await Listing.findByIdAndDelete(req.params.id);

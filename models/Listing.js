@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 
 const mediaSchema = new mongoose.Schema({
-  url:      { type: String, required: true },
+  url:      { type: String, required: true },  // Full Cloudinary HTTPS URL
+  publicId: { type: String },                  // Cloudinary public_id (needed to delete)
   type:     { type: String, enum: ['image', 'video'], required: true },
   filename: { type: String }
 });
@@ -14,7 +15,6 @@ const listingSchema = new mongoose.Schema({
   advance:     { type: Number, default: 0 },
   roomType:    { type: String, default: 'Any' },
   amenities:   [String],
-  rules:       [String],
   description: { type: String, default: '' },
   media:       [mediaSchema],
   owner:       { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
