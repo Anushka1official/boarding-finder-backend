@@ -5,7 +5,10 @@ const path     = require('path');
 require('dotenv').config();
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: 'https://anushka1official.github.io',
+  credentials: true
+}));
 app.use(express.json());
 
 // ✅ Serve uploaded files as static assets
