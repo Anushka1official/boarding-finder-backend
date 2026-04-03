@@ -11,37 +11,36 @@ function getUser(req) {
   } catch { return null; }
 }
 
-// GET my bookings — student sees their own bookings
+// ── GET bookings made BY the logged-in student ────
 router.get('/user/me', async (req, res) => {
   try {
     const user = getUser(req);
     if (!user) return res.status(401).json({ error: 'Login required.' });
     const bookings = await Booking.find({ student: user.userId })
-      .populate('listing', 'title city price roomType available')
+      .populate('listing', 'title city price roomType media')
       .populate('student', 'name email')
       .sort({ createdAt: -1 });
     res.json(bookings);
   } catch { res.status(500).json({ error: 'Server error.' }); }
 });
 
-// GET bookings for landlord — owner sees all bookings on their listings
+// ── GET bookings RECEIVED by the logged-in landlord ──
 router.get('/landlord', async (req, res) => {
   try {
     const user = getUser(req);
     if (!user) return res.status(401).json({ error: 'Login required.' });
-    // Find all listings owned by this landlord
     const myListings = await Listing.find({ owner: user.userId }).select('_id');
     const listingIds = myListings.map(l => l._id);
-    // Get all bookings for those listings
+    if (!listingIds.length) return res.json([]);
     const bookings = await Booking.find({ listing: { $in: listingIds } })
-      .populate('listing', 'title city price roomType available')
+      .populate('listing', 'title city price roomType media')
       .populate('student', 'name email')
       .sort({ createdAt: -1 });
     res.json(bookings);
-  } catch (err) { res.status(500).json({ error: 'Server error: ' + err.message }); }
+  } catch(err) { res.status(500).json({ error: 'Server error: ' + err.message }); }
 });
 
-// GET bookings by studentId (legacy — keep for backward compat)
+// ── GET by studentId (legacy) ─────────────────────
 router.get('/:studentId', async (req, res) => {
   try {
     const bookings = await Booking.find({ student: req.params.studentId })
@@ -50,7 +49,7 @@ router.get('/:studentId', async (req, res) => {
   } catch { res.status(500).json({ error: 'Server error.' }); }
 });
 
-// POST create booking → auto marks listing as unavailable
+// ── POST create booking ───────────────────────────
 router.post('/', async (req, res) => {
   try {
     const user = getUser(req);
@@ -66,15 +65,15 @@ router.post('/', async (req, res) => {
       moveInDate: req.body.moveInDate,
       roomType:   req.body.roomType,
       message:    req.body.message || '',
-      status:     'pending'
+      status:     'booked'          // ← instantly booked, no pending/confirm flow
     });
     await booking.save();
 
-    // ✅ Mark listing as unavailable
+    // Mark listing as unavailable immediately
     await Listing.findByIdAndUpdate(req.body.listing, { available: false });
 
     const populated = await booking.populate('listing', 'title city price roomType');
-    res.json({ message: 'Booking created! Listing marked as unavailable.', booking: populated });
+    res.json({ message: 'Booking created!', booking: populated });
   } catch(err) {
     res.status(500).json({ error: 'Server error: ' + err.message });
   }
