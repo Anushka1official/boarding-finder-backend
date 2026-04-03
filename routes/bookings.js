@@ -11,19 +11,37 @@ function getUser(req) {
   } catch { return null; }
 }
 
-// GET my bookings (must be before /:id)
+// GET my bookings — student sees their own bookings
 router.get('/user/me', async (req, res) => {
   try {
     const user = getUser(req);
     if (!user) return res.status(401).json({ error: 'Login required.' });
     const bookings = await Booking.find({ student: user.userId })
-      .populate('listing', 'title city price roomType')
+      .populate('listing', 'title city price roomType available')
+      .populate('student', 'name email')
       .sort({ createdAt: -1 });
     res.json(bookings);
   } catch { res.status(500).json({ error: 'Server error.' }); }
 });
 
-// GET bookings by studentId (legacy)
+// GET bookings for landlord — owner sees all bookings on their listings
+router.get('/landlord', async (req, res) => {
+  try {
+    const user = getUser(req);
+    if (!user) return res.status(401).json({ error: 'Login required.' });
+    // Find all listings owned by this landlord
+    const myListings = await Listing.find({ owner: user.userId }).select('_id');
+    const listingIds = myListings.map(l => l._id);
+    // Get all bookings for those listings
+    const bookings = await Booking.find({ listing: { $in: listingIds } })
+      .populate('listing', 'title city price roomType available')
+      .populate('student', 'name email')
+      .sort({ createdAt: -1 });
+    res.json(bookings);
+  } catch (err) { res.status(500).json({ error: 'Server error: ' + err.message }); }
+});
+
+// GET bookings by studentId (legacy — keep for backward compat)
 router.get('/:studentId', async (req, res) => {
   try {
     const bookings = await Booking.find({ student: req.params.studentId })
