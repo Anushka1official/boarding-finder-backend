@@ -56,6 +56,8 @@ router.get('/', async (req, res) => {
   try {
     const filter = {};
     if (req.query.city) filter.city = new RegExp(req.query.city, 'i');
+    if (req.query.roomType) filter.roomType = req.query.roomType;
+    if (req.query.boardingFor) filter.boardingFor = req.query.boardingFor;
     const listings = await Listing.find(filter).sort({ createdAt: -1 });
     res.json(listings);
   } catch { res.status(500).json({ error: 'Server error.' }); }
@@ -76,7 +78,16 @@ router.post('/', async (req, res) => {
   try {
     const user = getUser(req);
     if (!user) return res.status(401).json({ error: 'Login required.' });
-    const listing = new Listing({ ...req.body, owner: user.userId, media: [] });
+
+    const payload = {
+      ...req.body,
+      roomType: req.body.roomType,
+      boardingFor: req.body.boardingFor,
+      owner: user.userId,
+      media: []
+    };
+
+    const listing = new Listing(payload);
     await listing.save();
     res.json({ message: 'Listing created!', listing });
   } catch (err) { res.status(500).json({ error: 'Server error: ' + err.message }); }
@@ -88,11 +99,13 @@ async function updateListing(req, res) {
     const user = getUser(req);
     if (!user) return res.status(401).json({ error: 'Login required.' });
     const listing = await Listing.findByIdAndUpdate(
-      req.params.id, { $set: req.body }, { new: true }
+      req.params.id,
+      { $set: req.body },
+      { new: true, runValidators: true }
     );
     if (!listing) return res.status(404).json({ error: 'Listing not found.' });
     res.json({ message: 'Updated!', listing });
-  } catch { res.status(500).json({ error: 'Server error.' }); }
+  } catch (err) { res.status(500).json({ error: 'Server error: ' + err.message }); }
 }
 router.put('/:id',   updateListing);
 router.patch('/:id', updateListing);
