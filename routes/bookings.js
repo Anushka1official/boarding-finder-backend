@@ -3,6 +3,7 @@ const router  = express.Router();
 const jwt     = require('jsonwebtoken');
 const Booking = require('../models/Booking');
 const Listing = require('../models/Listing');
+const User    = require('../models/User');
 
 function getUser(req) {
   try {
@@ -11,28 +12,53 @@ function getUser(req) {
   } catch { return null; }
 }
 
-// GET my bookings (must be before /:id)
+// ── GET bookings made BY the logged-in student ────
+// Used by students to see their own bookings
 router.get('/user/me', async (req, res) => {
   try {
     const user = getUser(req);
     if (!user) return res.status(401).json({ error: 'Login required.' });
     const bookings = await Booking.find({ student: user.userId })
-      .populate('listing', 'title city price roomType')
+      .populate('listing', 'title city price roomType media')
       .sort({ createdAt: -1 });
     res.json(bookings);
   } catch { res.status(500).json({ error: 'Server error.' }); }
 });
 
-// GET bookings by studentId (legacy)
-router.get('/:studentId', async (req, res) => {
+// ── GET bookings RECEIVED by the logged-in owner ──
+// Used by landlords to see who booked their listings
+router.get('/owner/me', async (req, res) => {
   try {
-    const bookings = await Booking.find({ student: req.params.studentId })
-      .populate('listing', 'title city price');
-    res.json(bookings);
-  } catch { res.status(500).json({ error: 'Server error.' }); }
+    const user = getUser(req);
+    if (!user) return res.status(401).json({ error: 'Login required.' });
+
+    // Find all listings owned by this user
+    const myListings = await Listing.find({ owner: user.userId }, '_id');
+    const listingIds = myListings.map(l => l._id);
+
+    if (!listingIds.length) return res.json([]);
+
+    // Find all bookings for those listings, populate listing + student name
+    const bookings = await Booking.find({ listing: { $in: listingIds } })
+      .populate('listing', 'title city price roomType')
+      .populate('student', 'name email')
+      .sort({ createdAt: -1 });
+
+    // Attach student name to each booking for easy display
+    const result = bookings.map(b => ({
+      ...b.toObject(),
+      studentName:  b.student?.name  || 'Student',
+      studentEmail: b.student?.email || '',
+    }));
+
+    res.json(result);
+  } catch (e) {
+    console.error('Owner bookings error:', e.message);
+    res.status(500).json({ error: 'Server error.' });
+  }
 });
 
-// POST create booking → auto marks listing as unavailable
+// ── POST create booking ───────────────────────────
 router.post('/', async (req, res) => {
   try {
     const user = getUser(req);
@@ -52,7 +78,7 @@ router.post('/', async (req, res) => {
     });
     await booking.save();
 
-    // ✅ Mark listing as unavailable
+    // Mark listing as unavailable
     await Listing.findByIdAndUpdate(req.body.listing, { available: false });
 
     const populated = await booking.populate('listing', 'title city price roomType');
