@@ -19,7 +19,8 @@ const listingSchema = new mongoose.Schema({
   description: { type: String, default: '' },
   media:       [mediaSchema],
   owner:       { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  available:   { type: Boolean, default: true }
+  available:           { type: Boolean, default: true },
+  futureVacancyMonths: { type: Number, min: 0, max: 12, default: 0 }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Listing', listingSchema);

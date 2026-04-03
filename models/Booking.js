@@ -5,8 +5,10 @@ const bookingSchema = new mongoose.Schema({
   student:    { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   moveInDate: { type: Date },
   status:     { type: String, default: 'booked' },
-  roomType:   { type: String },
-  message:    { type: String }
+  roomType:       { type: String },
+  bookingType:    { type: String, enum: ['available', 'future'], default: 'available' },
+  futureVacancyMonths: { type: Number, default: 0 },
+  message:        { type: String }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Booking', bookingSchema);

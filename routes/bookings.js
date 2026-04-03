@@ -11,20 +11,18 @@ function getUser(req) {
   } catch { return null; }
 }
 
-// ── GET bookings made BY the logged-in student ────
 router.get('/user/me', async (req, res) => {
   try {
     const user = getUser(req);
     if (!user) return res.status(401).json({ error: 'Login required.' });
     const bookings = await Booking.find({ student: user.userId })
-      .populate('listing', 'title city price roomType media')
+      .populate('listing', 'title city price roomType media futureVacancyMonths available')
       .populate('student', 'name email')
       .sort({ createdAt: -1 });
     res.json(bookings);
   } catch { res.status(500).json({ error: 'Server error.' }); }
 });
 
-// ── GET bookings RECEIVED by the logged-in landlord ──
 router.get('/landlord', async (req, res) => {
   try {
     const user = getUser(req);
@@ -33,14 +31,13 @@ router.get('/landlord', async (req, res) => {
     const listingIds = myListings.map(l => l._id);
     if (!listingIds.length) return res.json([]);
     const bookings = await Booking.find({ listing: { $in: listingIds } })
-      .populate('listing', 'title city price roomType media')
+      .populate('listing', 'title city price roomType media futureVacancyMonths available')
       .populate('student', 'name email')
       .sort({ createdAt: -1 });
     res.json(bookings);
   } catch(err) { res.status(500).json({ error: 'Server error: ' + err.message }); }
 });
 
-// ── GET by studentId (legacy) ─────────────────────
 router.get('/:studentId', async (req, res) => {
   try {
     const bookings = await Booking.find({ student: req.params.studentId })
@@ -49,30 +46,38 @@ router.get('/:studentId', async (req, res) => {
   } catch { res.status(500).json({ error: 'Server error.' }); }
 });
 
-// ── POST create booking ───────────────────────────
 router.post('/', async (req, res) => {
   try {
     const user = getUser(req);
     if (!user) return res.status(401).json({ error: 'Login required.' });
 
     const listing = await Listing.findById(req.body.listing);
-    if (!listing)           return res.status(404).json({ error: 'Listing not found.' });
-    if (!listing.available) return res.status(400).json({ error: 'This listing is no longer available.' });
+    if (!listing) return res.status(404).json({ error: 'Listing not found.' });
+    if (!listing.available && !(listing.futureVacancyMonths > 0)) {
+      return res.status(400).json({ error: 'This listing is no longer available.' });
+    }
+
+    const bookingType = listing.available ? 'available' : 'future';
+    const futureVacancyMonths = bookingType === 'future' ? (listing.futureVacancyMonths || 0) : 0;
 
     const booking = new Booking({
       listing:    req.body.listing,
       student:    user.userId,
       moveInDate: req.body.moveInDate,
       roomType:   req.body.roomType,
+      bookingType,
+      futureVacancyMonths,
       message:    req.body.message || '',
-      status:     'booked'          // ← instantly booked, no pending/confirm flow
+      status:     'booked'
     });
     await booking.save();
 
-    // Mark listing as unavailable immediately
-    await Listing.findByIdAndUpdate(req.body.listing, { available: false });
+    await Listing.findByIdAndUpdate(req.body.listing, {
+      available: false,
+      futureVacancyMonths: 0
+    });
 
-    const populated = await booking.populate('listing', 'title city price roomType');
+    const populated = await booking.populate('listing', 'title city price roomType futureVacancyMonths available');
     res.json({ message: 'Booking created!', booking: populated });
   } catch(err) {
     res.status(500).json({ error: 'Server error: ' + err.message });
