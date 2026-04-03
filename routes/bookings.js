@@ -4,8 +4,6 @@ const jwt     = require('jsonwebtoken');
 const Booking = require('../models/Booking');
 const Listing = require('../models/Listing');
 
-const ACTIVE_BOOKING_FILTER = { status: { $ne: 'released' } };
-
 function getUser(req) {
   try {
     const token = (req.headers.authorization || '').replace('Bearer ', '');
@@ -17,7 +15,7 @@ router.get('/user/me', async (req, res) => {
   try {
     const user = getUser(req);
     if (!user) return res.status(401).json({ error: 'Login required.' });
-    const bookings = await Booking.find({ student: user.userId, ...ACTIVE_BOOKING_FILTER })
+    const bookings = await Booking.find({ student: user.userId, status: 'active' })
       .populate('listing', 'title city price roomType media futureVacancyMonths available')
       .populate('student', 'name email')
       .sort({ createdAt: -1 });
@@ -32,7 +30,7 @@ router.get('/landlord', async (req, res) => {
     const myListings = await Listing.find({ owner: user.userId }).select('_id');
     const listingIds = myListings.map(l => l._id);
     if (!listingIds.length) return res.json([]);
-    const bookings = await Booking.find({ listing: { $in: listingIds }, ...ACTIVE_BOOKING_FILTER })
+    const bookings = await Booking.find({ listing: { $in: listingIds }, status: 'active' })
       .populate('listing', 'title city price roomType media futureVacancyMonths available')
       .populate('student', 'name email')
       .sort({ createdAt: -1 });
@@ -42,7 +40,7 @@ router.get('/landlord', async (req, res) => {
 
 router.get('/:studentId', async (req, res) => {
   try {
-    const bookings = await Booking.find({ student: req.params.studentId, ...ACTIVE_BOOKING_FILTER })
+    const bookings = await Booking.find({ student: req.params.studentId, status: 'active' })
       .populate('listing', 'title city price');
     res.json(bookings);
   } catch { res.status(500).json({ error: 'Server error.' }); }
@@ -62,10 +60,7 @@ router.post('/', async (req, res) => {
     const bookingType = listing.available ? 'available' : 'future';
     const futureVacancyMonths = bookingType === 'future' ? (listing.futureVacancyMonths || 0) : 0;
 
-    await Booking.updateMany(
-      { listing: req.body.listing, status: { $ne: 'released' } },
-      { $set: { status: 'released' } }
-    );
+    await Booking.updateMany({ listing: req.body.listing, status: 'active' }, { $set: { status: 'inactive' } });
 
     const booking = new Booking({
       listing:    req.body.listing,
@@ -75,7 +70,7 @@ router.post('/', async (req, res) => {
       bookingType,
       futureVacancyMonths,
       message:    req.body.message || '',
-      status:     'booked'
+      status:     'active'
     });
     await booking.save();
 

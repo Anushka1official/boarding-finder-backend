@@ -61,7 +61,7 @@ async function getVisibleBookedListingIdsForUser(user) {
   const ownListings = await Listing.find({ owner: user.userId }).select('_id');
   ownListings.forEach(l => ids.add(String(l._id)));
 
-  const myBookings = await Booking.find({ student: user.userId, status: { $ne: 'released' } }).select('listing');
+  const myBookings = await Booking.find({ student: user.userId, status: 'active' }).select('listing');
   myBookings.forEach(b => {
     if (b.listing) ids.add(String(b.listing));
   });
@@ -118,7 +118,7 @@ router.get('/:id', async (req, res) => {
     if (!listing.available && !(listing.futureVacancyMonths > 0)) {
       const user = getUser(req);
       const booking = user
-        ? await Booking.findOne({ listing: listing._id, student: user.userId, status: { $ne: 'released' } }).select('_id')
+        ? await Booking.findOne({ listing: listing._id, student: user.userId, status: 'active' }).select('_id')
         : null;
       const isOwner = user && listing.owner && listing.owner.toString() === user.userId;
       if (!isOwner && !booking) {
@@ -174,17 +174,19 @@ async function updateListing(req, res) {
       updates.futureVacancyMonths = 0;
     }
 
+    const previousListing = await Listing.findById(req.params.id);
+    if (!previousListing) return res.status(404).json({ error: 'Listing not found.' });
+
     const listing = await Listing.findByIdAndUpdate(
       req.params.id,
       { $set: updates },
       { new: true, runValidators: true }
     );
     if (!listing) return res.status(404).json({ error: 'Listing not found.' });
-
-    if (listing.available || Number(listing.futureVacancyMonths || 0) > 0) {
+    if (listing.available || listing.futureVacancyMonths > 0) {
       await Booking.updateMany(
-        { listing: listing._id, status: { $ne: 'released' } },
-        { $set: { status: 'released' } }
+        { listing: listing._id, status: 'active' },
+        { $set: { status: 'inactive' } }
       );
     }
 
