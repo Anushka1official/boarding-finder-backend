@@ -5,18 +5,19 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const twilio = require('twilio');
 
-// Twilio client — reads credentials from .env
+
 const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN
 );
 
-// ── Helper: generate 6-digit OTP ─────────────────
+
 function generateOtp() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-// ── Auth middleware ───────────────────────────────
+// ── Auth middleware 
+
 function authMiddleware(req, res, next) {
   const header = req.headers['authorization'];
   if (!header) return res.status(401).json({ error: 'No token provided' });
@@ -30,7 +31,8 @@ function authMiddleware(req, res, next) {
   }
 }
 
-// ── SIGNUP ────────────────────────────────────────
+// ── SIGNUP 
+
 router.post('/signup', async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
@@ -43,7 +45,8 @@ router.post('/signup', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── LOGIN ─────────────────────────────────────────
+// ── LOGIN 
+
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -67,22 +70,21 @@ router.post('/login', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── SEND OTP ──────────────────────────────────────
-// POST /api/auth/send-otp
-// Body: { phone: '+94771234567' }
-// Requires: Bearer token
+  
 router.post('/send-otp', authMiddleware, async (req, res) => {
   try {
     const { phone } = req.body;
     if (!phone) return res.status(400).json({ error: 'Phone number is required' });
 
-    // Basic E.164 format check
+    
     const cleaned = phone.trim();
     if (!/^\+\d{7,15}$/.test(cleaned)) {
       return res.status(400).json({ error: 'Please enter a valid phone number in international format (e.g. +94771234567)' });
     }
 
-    // Check if this phone is already verified by another account
+
+    
+      
     const existing = await User.findOne({ phone: cleaned, phoneVerified: true });
     if (existing && existing._id.toString() !== req.user.userId) {
       return res.status(400).json({ error: 'This phone number is already verified by another account' });
@@ -91,14 +93,14 @@ router.post('/send-otp', authMiddleware, async (req, res) => {
     const otp     = generateOtp();
     const expires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-    // Save OTP to user
+    
     await User.findByIdAndUpdate(req.user.userId, {
       phone:           cleaned,
       phoneOtp:        otp,
       phoneOtpExpires: expires,
     });
 
-    // Send SMS via Twilio
+    
     await twilioClient.messages.create({
       body: `Your Smart Boarding verification code is: ${otp}. Valid for 10 minutes. Do not share this code.`,
       from: process.env.TWILIO_PHONE_NUMBER,
@@ -112,10 +114,7 @@ router.post('/send-otp', authMiddleware, async (req, res) => {
   }
 });
 
-// ── VERIFY OTP ────────────────────────────────────
-// POST /api/auth/verify-otp
-// Body: { otp: '123456' }
-// Requires: Bearer token
+  
 router.post('/verify-otp', authMiddleware, async (req, res) => {
   try {
     const { otp } = req.body;
@@ -136,7 +135,7 @@ router.post('/verify-otp', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Incorrect OTP. Please try again.' });
     }
 
-    // Mark as verified and clear OTP
+   
     await User.findByIdAndUpdate(req.user.userId, {
       phoneVerified:   true,
       phoneOtp:        null,
@@ -150,9 +149,7 @@ router.post('/verify-otp', authMiddleware, async (req, res) => {
   }
 });
 
-// ── GET VERIFICATION STATUS ───────────────────────
-// GET /api/auth/me
-// Requires: Bearer token
+  
 router.get('/me', authMiddleware, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId).select('-password -phoneOtp -phoneOtpExpires');

@@ -9,6 +9,6 @@ const bookingSchema = new mongoose.Schema({
   bookingType:    { type: String, enum: ['available', 'future'], default: 'available' },
   futureVacancyMonths: { type: Number, default: 0 },
   message:        { type: String }
-}, { timestamps: true });
+}, { timestamps: true });   
 
 module.exports = mongoose.model('Booking', bookingSchema);

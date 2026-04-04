@@ -2,12 +2,14 @@ const mongoose = require('mongoose');
 
 const mediaSchema = new mongoose.Schema({
   url:      { type: String, required: true },  // Full Cloudinary HTTPS URL
-  publicId: { type: String },                  // Cloudinary public_id (needed to delete)
+  publicId: { type: String },                  
   type:     { type: String, enum: ['image', 'video'], required: true },
   filename: { type: String }
-});
+});    
+ 
 
 const listingSchema = new mongoose.Schema({
+  
   title:       { type: String, required: true },
   city:        { type: String, required: true },
   price:       { type: Number, required: true },
@@ -21,6 +23,9 @@ const listingSchema = new mongoose.Schema({
   owner:       { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   available:           { type: Boolean, default: true },
   futureVacancyMonths: { type: Number, min: 0, max: 12, default: 0 }
-}, { timestamps: true });
+}, { timestamps: true });   
+
+
+
 
 module.exports = mongoose.model('Listing', listingSchema);

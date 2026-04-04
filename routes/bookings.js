@@ -4,6 +4,7 @@ const jwt     = require('jsonwebtoken');
 const Booking = require('../models/Booking');
 const Listing = require('../models/Listing');
 
+
 function getUser(req) {
   try {
     const token = (req.headers.authorization || '').replace('Bearer ', '');
@@ -36,7 +37,8 @@ router.get('/landlord', async (req, res) => {
       .sort({ createdAt: -1 });
     res.json(bookings);
   } catch(err) { res.status(500).json({ error: 'Server error: ' + err.message }); }
-});
+});  
+
 
 router.get('/:studentId', async (req, res) => {
   try {

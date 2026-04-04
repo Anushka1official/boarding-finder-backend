@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const Review = require('../models/Review');
-const jwt = require('jsonwebtoken');
+const jwt = require('jsonwebtoken');     
+
 
 function auth(req, res, next) {
   const header = req.headers['authorization'];
@@ -13,6 +14,8 @@ function auth(req, res, next) {
   } catch(e) { res.status(401).json({ error: 'Invalid token' }); }
 }
 
+
+
 // GET all reviews for a listing
 router.get('/:listingId', async (req, res) => {
   try {
@@ -22,6 +25,7 @@ router.get('/:listingId', async (req, res) => {
     res.json(reviews);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
+
 
 // POST create a review
 router.post('/', auth, async (req, res) => {

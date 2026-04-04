@@ -7,6 +7,7 @@ const { Readable } = require('stream');
 const Listing      = require('../models/Listing');
 const Booking      = require('../models/Booking');
 
+
 function getUser(req) {
   try {
     const token = (req.headers.authorization || '').replace('Bearer ', '');
@@ -14,11 +15,12 @@ function getUser(req) {
   } catch { return null; }
 }
 
+
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key:    process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+});      
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -30,7 +32,8 @@ const upload = multer({
     if (ext || mime) cb(null, true);
     else cb(new Error('Only image and video files are allowed'));
   }
-});
+});    
+  
 
 function uploadToCloudinary(buffer, mimetype, folder) {
   return new Promise((resolve, reject) => {
@@ -45,13 +48,15 @@ function uploadToCloudinary(buffer, mimetype, folder) {
     readable.push(null);
     readable.pipe(stream);
   });
-}
+}    
+
 
 function normalizeFutureMonths(value) {
   const n = Number(value);
   if (!Number.isFinite(n) || n < 0) return 0;
   return Math.min(12, Math.floor(n));
-}
+}   
+
 
 async function getVisibleBookedListingIdsForUser(user) {
   if (!user) return [];
@@ -67,7 +72,7 @@ async function getVisibleBookedListingIdsForUser(user) {
   });
 
   return [...ids];
-}
+}   
 
 router.get('/', async (req, res) => {
   try {
@@ -283,5 +288,7 @@ router.delete('/:id', async (req, res) => {
     res.status(500).json({ error: 'Delete error: ' + err.message });
   }
 });
+      
+
 
 module.exports = router;
