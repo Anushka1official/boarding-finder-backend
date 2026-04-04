@@ -112,7 +112,7 @@ router.get('/:id', async (req, res) => {
   try {
     if (req.params.id === 'undefined') return res.status(400).json({ error: 'Invalid ID.' });
 
-    const listing = await Listing.findById(req.params.id);
+    const listing = await Listing.findById(req.params.id).populate('owner', 'name email phone role');
     if (!listing) return res.status(404).json({ error: 'Listing not found.' });
 
     if (!listing.available && !(listing.futureVacancyMonths > 0)) {
@@ -120,7 +120,8 @@ router.get('/:id', async (req, res) => {
       const booking = user
         ? await Booking.findOne({ listing: listing._id, student: user.userId, status: 'active' }).select('_id')
         : null;
-      const isOwner = user && listing.owner && listing.owner.toString() === user.userId;
+      const ownerId = listing.owner && (listing.owner._id ? String(listing.owner._id) : String(listing.owner));
+      const isOwner = user && ownerId === user.userId;
       if (!isOwner && !booking) {
         return res.status(404).json({ error: 'Listing not found.' });
       }
